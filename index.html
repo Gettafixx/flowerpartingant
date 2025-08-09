@@ -229,13 +229,18 @@
 
     <div class="controls" id="controls">
         <div class="control-group">
-            <label>Flower Density <span class="value-display" id="densityValue">100</span></label>
-            <input type="range" id="density" min="20" max="300" step="10" value="100">
+            <label>Flower Density <span class="value-display" id="densityValue">20</span></label>
+            <input type="range" id="density" min="20" max="300" step="10" value="20">
         </div>
         
         <div class="control-group">
-            <label>Return Time <span class="value-display" id="returnTimeValue">3.0s</span></label>
-            <input type="range" id="returnTime" min="0.5" max="10" step="0.5" value="3">
+            <label>Return Time <span class="value-display" id="returnTimeValue">1.0s</span></label>
+            <input type="range" id="returnTime" min="0.5" max="10" step="0.5" value="1">
+        </div>
+        
+        <div class="control-group">
+            <label>Damping (Less Bounce) <span class="value-display" id="dampingValue">0.95</span></label>
+            <input type="range" id="damping" min="0.7" max="0.99" step="0.01" value="0.95">
         </div>
         
         <div class="control-group">
@@ -435,7 +440,7 @@
                 return div;
             }
 
-            update(motionPoints, returnTime, repelForce) {
+            update(motionPoints, returnTime, repelForce, damping) {
                 // Check motion points and apply repel force
                 let forceX = 0;
                 let forceY = 0;
@@ -457,9 +462,9 @@
                 this.vx += forceX;
                 this.vy += forceY;
 
-                // Return to original position
+                // Return to original position with reduced spring force
                 if (this.repelTimer <= 0) {
-                    const returnForce = 0.05;
+                    const returnForce = 0.02; // Reduced from 0.05 for less bounciness
                     this.vx += (this.originalX - this.x) * returnForce;
                     this.vy += (this.originalY - this.y) * returnForce;
                 } else {
@@ -470,9 +475,9 @@
                 this.x += this.vx;
                 this.y += this.vy;
 
-                // Damping
-                this.vx *= 0.9;
-                this.vy *= 0.9;
+                // Damping (controls bounciness)
+                this.vx *= damping;
+                this.vy *= damping;
 
                 // Update element
                 this.element.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
@@ -591,7 +596,8 @@
 
         // Create flowers
         function createFlowers() {
-            const density = parseFloat(document.getElementById('density').value);
+            const density = document.getElementById('density') ? 
+                parseFloat(document.getElementById('density').value) : 20; // Default to 20
             const area = window.innerWidth * window.innerHeight;
             const numFlowers = Math.floor((area / 10000) * density);
             
@@ -639,6 +645,7 @@
         function animate() {
             const returnTime = parseFloat(document.getElementById('returnTime').value);
             const repelForce = parseFloat(document.getElementById('repelForce').value);
+            const damping = parseFloat(document.getElementById('damping').value);
             
             let motionPoints = [];
             if (motionDetector && cameraEnabled) {
@@ -649,7 +656,7 @@
             }
             
             flowers.forEach(flower => {
-                flower.update(motionPoints, returnTime, repelForce);
+                flower.update(motionPoints, returnTime, repelForce, damping);
             });
             
             animationId = requestAnimationFrame(animate);
@@ -694,6 +701,10 @@
 
         document.getElementById('returnTime').addEventListener('input', (e) => {
             document.getElementById('returnTimeValue').textContent = e.target.value + 's';
+        });
+
+        document.getElementById('damping').addEventListener('input', (e) => {
+            document.getElementById('dampingValue').textContent = e.target.value;
         });
 
         document.getElementById('sensitivity').addEventListener('input', (e) => {
