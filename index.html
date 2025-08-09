@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Reactive Flower Garden</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            position: relative;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #videoContainer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 100;
+            transition: opacity 0.3s;
+            background: #000;
+        }
+
+        #videoContainer.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #motionCanvas {
+            display: none;
+        }
+
+        .controls {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            z-index: 1000;
+            transition: all 0.3s;
+            max-width: 300px;
+        }
+
+        .controls.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-20px);
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .value-display {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 11px;
+            color: #666;
+            min-width: 40px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-bottom: 8px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.active {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .button-group button {
+            margin-bottom: 0;
+        }
+
+        #permissionPopup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            z-index: 2000;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        #permissionPopup.hidden {
+            display: none;
+        }
+
+        #permissionPopup h2 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 24px;
+        }
+
+        #permissionPopup p {
+            margin-bottom: 25px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .flower {
+            position: absolute;
+            pointer-events: none;
+            transition: none;
+            will-change: transform;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(5deg); }
+        }
+
+        .info {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            font-size: 12px;
+            opacity: 0.8;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <canvas id="motionCanvas"></canvas>
+    
+    <div id="videoContainer" class="hidden">
+        <video id="video" autoplay></video>
+    </div>
+
+    <div class="controls" id="controls">
+        <div class="control-group">
+            <label>Flower Density <span class="value-display" id="densityValue">100</span></label>
+            <input type="range" id="density" min="20" max="300" step="10" value="100">
+        </div>
+        
+        <div class="control-group">
+            <label>Return Time <span class="value-display" id="returnTimeValue">3.0s</span></label>
+            <input type="range" id="returnTime" min="0.5" max="10" step="0.5" value="3">
+        </div>
+        
+        <div class="control-group">
+            <label>Motion Sensitivity <span class="value-display" id="sensitivityValue">30</span></label>
+            <input type="range" id="sensitivity" min="10" max="50" step="5" value="30">
+        </div>
+        
+        <div class="control-group">
+            <label>Repel Force <span class="value-display" id="forceValue">200px</span></label>
+            <input type="range" id="repelForce" min="50" max="400" step="10" value="200">
+        </div>
+
+        <div class="button-group">
+            <button id="mirrorBtn">Mirror</button>
+            <button id="cameraBtn">Camera</button>
+            <button id="fullscreenBtn">Fullscreen</button>
+            <button id="hideUIBtn">Hide UI</button>
+        </div>
+    </div>
+
+    <div class="info" id="info">Press H to toggle UI</div>
+
+    <div id="permissionPopup">
+        <h2>🌸 Motion Flower Garden</h2>
+        <p>This experience uses your camera to detect motion. Your camera feed is processed locally and never leaves your device.</p>
+        <button id="enableCamera">Enable Camera</button>
+        <div id="errorMessage" style="display: none; margin-top: 20px; padding: 15px; background: #fee; border-radius: 8px; color: #c00;">
+            <strong>Camera Access Denied</strong><br>
+            <span style="font-size: 14px; color: #666; line-height: 1.5;">
+                Please allow camera access in your browser:<br>
+                • Click the camera icon in your address bar<br>
+                • Select "Allow" for camera access<br>
+                • Refresh the page and try again<br>
+                <br>
+                Or try the experience without camera (animations only)
+            </span>
+        </div>
+        <button id="noCameraMode" style="display: none; margin-top: 10px; background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);">
+            Continue Without Camera
+        </button>
+    </div>
+
+    <script>
+        // Flower SVG templates
+        const flowerTemplates = [
+            // Rose
+            `<svg viewBox="0 0 100 100" width="50" height="50">
+                <g transform="translate(50,50)">
+                    <circle cx="0" cy="0" r="8" fill="#ff6b9d" opacity="0.9"/>
+                    <g transform="rotate(0)">
+                        <ellipse cx="0" cy="-15" rx="12" ry="20" fill="#ff6b9d" opacity="0.8"/>
+                    </g>
+                    <g transform="rotate(72)">
+                        <ellipse cx="0" cy="-15" rx="12" ry="20" fill="#ff6b9d" opacity="0.8"/>
+                    </g>
+                    <g transform="rotate(144)">
+                        <ellipse cx="0" cy="-15" rx="12" ry="20" fill="#ff6b9d" opacity="0.8"/>
+                    </g>
+                    <g transform="rotate(216)">
+                        <ellipse cx="0" cy="-15" rx="12" ry="20" fill="#ff6b9d" opacity="0.8"/>
+                    </g>
+                    <g transform="rotate(288)">
+                        <ellipse cx="0" cy="-15" rx="12" ry="20" fill="#ff6b9d" opacity="0.8"/>
+                    </g>
+                    <circle cx="0" cy="0" r="10" fill="#ffd93d" opacity="0.9"/>
+                </g>
+            </svg>`,
+            
+            // Daisy
+            `<svg viewBox="0 0 100 100" width="40" height="40">
+                <g transform="translate(50,50)">
+                    <g transform="rotate(0)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(45)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(90)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(135)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(180)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(225)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(270)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <g transform="rotate(315)"><ellipse cx="0" cy="-20" rx="8" ry="18" fill="white" opacity="0.9"/></g>
+                    <circle cx="0" cy="0" r="12" fill="#ffd93d"/>
+                </g>
+            </svg>`,
+            
+            // Sunflower
+            `<svg viewBox="0 0 100 100" width="55" height="55">
+                <g transform="translate(50,50)">
+                    <g transform="rotate(0)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(30)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(60)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(90)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(120)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(150)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(180)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(210)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(240)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(270)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(300)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <g transform="rotate(330)"><ellipse cx="0" cy="-18" rx="10" ry="22" fill="#ffd93d" opacity="0.9"/></g>
+                    <circle cx="0" cy="0" r="15" fill="#8b4513"/>
+                </g>
+            </svg>`,
+            
+            // Tulip
+            `<svg viewBox="0 0 100 100" width="35" height="35">
+                <g transform="translate(50,50)">
+                    <ellipse cx="0" cy="0" rx="20" ry="25" fill="#ff6ec7" opacity="0.9"/>
+                    <path d="M -15,-10 Q -12,-25 0,-30 Q 12,-25 15,-10" fill="#ff6ec7"/>
+                    <path d="M -10,-5 L -8,-20 L 0,-25 L 8,-20 L 10,-5" fill="#ff9ff3" opacity="0.7"/>
+                </g>
+            </svg>`,
+            
+            // Lily
+            `<svg viewBox="0 0 100 100" width="45" height="45">
+                <g transform="translate(50,50)">
+                    <g transform="rotate(0)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <g transform="rotate(60)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <g transform="rotate(120)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <g transform="rotate(180)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <g transform="rotate(240)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <g transform="rotate(300)">
+                        <path d="M 0,0 Q -8,-20 0,-30 Q 8,-20 0,0" fill="#c56cf0" opacity="0.9"/>
+                    </g>
+                    <circle cx="0" cy="0" r="8" fill="#fff" opacity="0.9"/>
+                </g>
+            </svg>`,
+            
+            // Cherry Blossom
+            `<svg viewBox="0 0 100 100" width="38" height="38">
+                <g transform="translate(50,50)">
+                    <g transform="rotate(0)">
+                        <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#ffb3d9" opacity="0.85"/>
+                    </g>
+                    <g transform="rotate(72)">
+                        <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#ffb3d9" opacity="0.85"/>
+                    </g>
+                    <g transform="rotate(144)">
+                        <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#ffb3d9" opacity="0.85"/>
+                    </g>
+                    <g transform="rotate(216)">
+                        <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#ffb3d9" opacity="0.85"/>
+                    </g>
+                    <g transform="rotate(288)">
+                        <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#ffb3d9" opacity="0.85"/>
+                    </g>
+                    <circle cx="0" cy="0" r="6" fill="#fff" opacity="0.9"/>
+                </g>
+            </svg>`,
+            
+            // Violet
+            `<svg viewBox="0 0 100 100" width="32" height="32">
+                <g transform="translate(50,50)">
+                    <circle cx="0" cy="-12" r="12" fill="#8b7ab8" opacity="0.9"/>
+                    <circle cx="-10" cy="5" r="12" fill="#8b7ab8" opacity="0.9"/>
+                    <circle cx="10" cy="5" r="12" fill="#8b7ab8" opacity="0.9"/>
+                    <circle cx="-8" cy="-8" r="12" fill="#8b7ab8" opacity="0.9"/>
+                    <circle cx="8" cy="-8" r="12" fill="#8b7ab8" opacity="0.9"/>
+                    <circle cx="0" cy="0" r="8" fill="#ffd700" opacity="0.9"/>
+                </g>
+            </svg>`
+        ];
+
+        class Flower {
+            constructor(x, y) {
+                this.originalX = x;
+                this.originalY = y;
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.rotation = Math.random() * 360;
+                this.scale = 0.5 + Math.random() * 0.8; // Varied sizes for better coverage
+                this.type = Math.floor(Math.random() * flowerTemplates.length);
+                this.repelTimer = 0;
+                this.zIndex = Math.floor(Math.random() * 100); // Add depth layering
+                this.opacity = 0.7 + Math.random() * 0.3; // Slight opacity variation
+                this.element = this.createElement();
+            }
+
+            createElement() {
+                const div = document.createElement('div');
+                div.className = 'flower';
+                div.innerHTML = flowerTemplates[this.type];
+                div.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
+                div.style.zIndex = this.zIndex;
+                div.style.opacity = this.opacity;
+                document.body.appendChild(div);
+                return div;
+            }
+
+            update(motionPoints, returnTime, repelForce) {
+                // Check motion points and apply repel force
+                let forceX = 0;
+                let forceY = 0;
+                
+                motionPoints.forEach(point => {
+                    const dx = this.x - point.x;
+                    const dy = this.y - point.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < repelForce) {
+                        const force = (1 - distance / repelForce) * 2;
+                        forceX += (dx / distance) * force * repelForce * 0.1;
+                        forceY += (dy / distance) * force * repelForce * 0.1;
+                        this.repelTimer = returnTime;
+                    }
+                });
+
+                // Apply forces
+                this.vx += forceX;
+                this.vy += forceY;
+
+                // Return to original position
+                if (this.repelTimer <= 0) {
+                    const returnForce = 0.05;
+                    this.vx += (this.originalX - this.x) * returnForce;
+                    this.vy += (this.originalY - this.y) * returnForce;
+                } else {
+                    this.repelTimer -= 0.016; // Assuming 60fps
+                }
+
+                // Apply velocity
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Damping
+                this.vx *= 0.9;
+                this.vy *= 0.9;
+
+                // Update element
+                this.element.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
+            }
+
+            destroy() {
+                this.element.remove();
+            }
+        }
+
+        class MotionDetector {
+            constructor() {
+                this.video = document.getElementById('video');
+                this.canvas = document.getElementById('motionCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.lastFrame = null;
+                this.motionPoints = [];
+                this.mirrored = false;
+                this.sensitivity = 30;
+            }
+
+            async init() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        } 
+                    });
+                    this.video.srcObject = stream;
+                    
+                    this.video.addEventListener('loadedmetadata', () => {
+                        this.canvas.width = this.video.videoWidth;
+                        this.canvas.height = this.video.videoHeight;
+                    });
+                    
+                    return true;
+                } catch (err) {
+                    console.error('Error accessing camera:', err);
+                    return false;
+                }
+            }
+
+            detect() {
+                if (!this.video.videoWidth) return [];
+
+                this.ctx.save();
+                if (this.mirrored) {
+                    this.ctx.scale(-1, 1);
+                    this.ctx.drawImage(this.video, -this.canvas.width, 0);
+                } else {
+                    this.ctx.drawImage(this.video, 0, 0);
+                }
+                this.ctx.restore();
+
+                const currentFrame = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                
+                if (!this.lastFrame) {
+                    this.lastFrame = currentFrame;
+                    return [];
+                }
+
+                const motionData = this.compareFrames(this.lastFrame, currentFrame);
+                this.lastFrame = currentFrame;
+                
+                return motionData;
+            }
+
+            compareFrames(frame1, frame2) {
+                const motionPoints = [];
+                const blockSize = 20;
+                const threshold = this.sensitivity;
+                
+                for (let y = 0; y < this.canvas.height; y += blockSize) {
+                    for (let x = 0; x < this.canvas.width; x += blockSize) {
+                        let diff = 0;
+                        
+                        for (let by = 0; by < blockSize && y + by < this.canvas.height; by++) {
+                            for (let bx = 0; bx < blockSize && x + bx < this.canvas.width; bx++) {
+                                const i = ((y + by) * this.canvas.width + (x + bx)) * 4;
+                                diff += Math.abs(frame1.data[i] - frame2.data[i]);
+                                diff += Math.abs(frame1.data[i + 1] - frame2.data[i + 1]);
+                                diff += Math.abs(frame1.data[i + 2] - frame2.data[i + 2]);
+                            }
+                        }
+                        
+                        diff /= (blockSize * blockSize * 3);
+                        
+                        if (diff > threshold) {
+                            motionPoints.push({
+                                x: (x / this.canvas.width) * window.innerWidth,
+                                y: (y / this.canvas.height) * window.innerHeight,
+                                intensity: diff / 255
+                            });
+                        }
+                    }
+                }
+                
+                return motionPoints;
+            }
+
+            toggleMirror() {
+                this.mirrored = !this.mirrored;
+            }
+        }
+
+        // Initialize
+        let flowers = [];
+        let motionDetector;
+        let animationId;
+        let cameraEnabled = false;
+        let uiHidden = false;
+        let cameraVisible = false;
+        let simulatedMotion = false;
+        let simulatedPoints = [];
+
+        // Create flowers
+        function createFlowers() {
+            const density = parseFloat(document.getElementById('density').value);
+            const area = window.innerWidth * window.innerHeight;
+            const numFlowers = Math.floor((area / 10000) * density);
+            
+            flowers.forEach(f => f.destroy());
+            flowers = [];
+            
+            // Create a grid-based distribution with some randomness for more even coverage
+            const cols = Math.ceil(Math.sqrt(numFlowers * (window.innerWidth / window.innerHeight)));
+            const rows = Math.ceil(numFlowers / cols);
+            const cellWidth = window.innerWidth / cols;
+            const cellHeight = window.innerHeight / rows;
+            
+            for (let i = 0; i < numFlowers; i++) {
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                
+                // Add randomness within each cell for natural look
+                const x = (col * cellWidth) + (Math.random() * cellWidth);
+                const y = (row * cellHeight) + (Math.random() * cellHeight);
+                
+                flowers.push(new Flower(x, y));
+            }
+        }
+
+        // Simulated motion for no-camera mode
+        function updateSimulatedMotion() {
+            if (!simulatedMotion) return;
+            
+            const time = Date.now() * 0.001;
+            simulatedPoints = [
+                {
+                    x: (Math.sin(time * 0.5) * 0.3 + 0.5) * window.innerWidth,
+                    y: (Math.cos(time * 0.3) * 0.3 + 0.5) * window.innerHeight,
+                    intensity: 0.5 + Math.sin(time * 2) * 0.3
+                },
+                {
+                    x: (Math.cos(time * 0.4) * 0.3 + 0.5) * window.innerWidth,
+                    y: (Math.sin(time * 0.6) * 0.3 + 0.5) * window.innerHeight,
+                    intensity: 0.5 + Math.cos(time * 1.5) * 0.3
+                }
+            ];
+        }
+
+        // Animation loop
+        function animate() {
+            const returnTime = parseFloat(document.getElementById('returnTime').value);
+            const repelForce = parseFloat(document.getElementById('repelForce').value);
+            
+            let motionPoints = [];
+            if (motionDetector && cameraEnabled) {
+                motionPoints = motionDetector.detect();
+            } else if (simulatedMotion) {
+                updateSimulatedMotion();
+                motionPoints = simulatedPoints;
+            }
+            
+            flowers.forEach(flower => {
+                flower.update(motionPoints, returnTime, repelForce);
+            });
+            
+            animationId = requestAnimationFrame(animate);
+        }
+
+        // Event listeners
+        document.getElementById('enableCamera').addEventListener('click', async () => {
+            motionDetector = new MotionDetector();
+            const success = await motionDetector.init();
+            
+            if (success) {
+                cameraEnabled = true;
+                document.getElementById('permissionPopup').classList.add('hidden');
+                animate();
+            } else {
+                // Show error message and no-camera option
+                document.getElementById('errorMessage').style.display = 'block';
+                document.getElementById('noCameraMode').style.display = 'block';
+            }
+        });
+
+        // No camera mode
+        document.getElementById('noCameraMode').addEventListener('click', () => {
+            simulatedMotion = true;
+            document.getElementById('permissionPopup').classList.add('hidden');
+            document.getElementById('cameraBtn').style.display = 'none';
+            document.getElementById('mirrorBtn').style.display = 'none';
+            animate();
+            
+            // Add note about simulated mode
+            const note = document.createElement('div');
+            note.style.cssText = 'position: fixed; top: 20px; right: 20px; background: rgba(255,255,255,0.9); padding: 10px 15px; border-radius: 8px; font-size: 12px; z-index: 100;';
+            note.textContent = 'Simulated motion mode (no camera)';
+            document.body.appendChild(note);
+            setTimeout(() => note.style.display = 'none', 5000);
+        });
+
+        document.getElementById('density').addEventListener('input', (e) => {
+            document.getElementById('densityValue').textContent = e.target.value;
+            createFlowers();
+        });
+
+        document.getElementById('returnTime').addEventListener('input', (e) => {
+            document.getElementById('returnTimeValue').textContent = e.target.value + 's';
+        });
+
+        document.getElementById('sensitivity').addEventListener('input', (e) => {
+            document.getElementById('sensitivityValue').textContent = e.target.value;
+            if (motionDetector) {
+                motionDetector.sensitivity = parseInt(e.target.value);
+            }
+        });
+
+        document.getElementById('repelForce').addEventListener('input', (e) => {
+            document.getElementById('forceValue').textContent = e.target.value + 'px';
+        });
+
+        document.getElementById('mirrorBtn').addEventListener('click', () => {
+            if (motionDetector) {
+                motionDetector.toggleMirror();
+                document.getElementById('mirrorBtn').classList.toggle('active');
+            }
+        });
+
+        document.getElementById('cameraBtn').addEventListener('click', () => {
+            if (cameraEnabled) {
+                cameraVisible = !cameraVisible;
+                document.getElementById('videoContainer').classList.toggle('hidden', !cameraVisible);
+                document.getElementById('cameraBtn').classList.toggle('active', cameraVisible);
+            }
+        });
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        document.getElementById('hideUIBtn').addEventListener('click', () => {
+            uiHidden = true;
+            document.getElementById('controls').classList.add('hidden');
+            document.getElementById('info').style.display = 'block';
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'h') {
+                uiHidden = !uiHidden;
+                document.getElementById('controls').classList.toggle('hidden', uiHidden);
+                document.getElementById('info').style.display = uiHidden ? 'block' : 'none';
+            }
+        });
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            createFlowers();
+        });
+
+        // Initialize flowers
+        createFlowers();
+
+        // Hide info text after a few seconds
+        setTimeout(() => {
+            if (!uiHidden) {
+                document.getElementById('info').style.display = 'none';
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
